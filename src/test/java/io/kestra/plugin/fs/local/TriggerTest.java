@@ -179,6 +179,42 @@ class TriggerTest extends AbstractTriggerTest {
     }
 
     @Test
+    void filesOverMaxFilesShouldFireOnTheNextPoll() throws Exception {
+        Path sourceDir = Paths.get("/tmp/trigger-maxfiles-next-poll");
+        Files.createDirectories(sourceDir);
+
+        try {
+            for (int i = 1; i <= 30; i++) {
+                Files.writeString(sourceDir.resolve("file" + i + ".txt"), "file" + i);
+            }
+
+            var trigger = io.kestra.plugin.fs.local.Trigger.builder()
+                .id("local-" + FriendlyId.createFriendlyId())
+                .type(io.kestra.plugin.fs.local.Trigger.class.getName())
+                .from(Property.ofValue(sourceDir.toString()))
+                .build();
+
+            var context = TestsUtils.mockTrigger(runContextFactory, trigger);
+            java.util.List<Integer> counts = new java.util.ArrayList<>();
+            java.util.Set<Object> names = new java.util.HashSet<>();
+            for (int poll = 0; poll < 3; poll++) {
+                Optional<Execution> execution = trigger.evaluate(context.getKey(), context.getValue());
+                if (execution.isPresent()) {
+                    @SuppressWarnings("unchecked")
+                    var files = (java.util.List<Map<String, Object>>) execution.get().getTrigger().getVariables().get("files");
+                    counts.add(files.size());
+                    files.forEach(file -> names.add(file.get("name")));
+                }
+            }
+
+            assertThat("Files per execution", counts, contains(25, 5));
+            assertThat("Distinct files fired", names, hasSize(30));
+        } finally {
+            cleanup(sourceDir);
+        }
+    }
+
+    @Test
     void moveWithRegexAndRecursiveShouldPreserveDirectoryStructure() throws Exception {
         Path sourceDir = Paths.get("/tmp/test-recursive");
         Path subDir1 = sourceDir.resolve("subdir1");
